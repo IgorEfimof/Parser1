@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Парсер скринов NBA 2K / ESportsBattle + Калькулятор тотала</title>
+  <title>Парсер скринов NBA 2K + Калькулятор тотала</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { 
@@ -45,95 +45,36 @@
       font-family: monospace;
       font-size: 14px;
     }
-    .result { margin-top:20px; }
     table { border-collapse:collapse; width:100%; max-width:600px; margin: 10px 0; }
     td, th { border:1px solid #ddd; padding:8px 12px; text-align:left; }
     th { background:#f0f7ff; }
     .small { font-size:13px; color:#555; }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin: 20px 0;
-    }
-    .stat-card {
-      background: #f0f7ff;
-      border-radius: 8px;
-      padding: 15px;
-      border-left: 4px solid #3182ce;
-    }
-    .stat-value {
-      font-size: 24px;
-      font-weight: bold;
-      color: #1a365d;
-    }
-    .stat-label {
-      font-size: 14px;
-      color: #4a5568;
-    }
-    .prediction {
-      background: #e6fffa;
-      border-radius: 8px;
-      padding: 15px;
-      margin: 15px 0;
-      border-left: 4px solid #38b2ac;
-    }
-    .prediction-title {
-      font-size: 18px;
-      font-weight: bold;
-      color: #234e52;
-      margin-bottom: 10px;
-    }
-    .prediction-value {
-      font-size: 28px;
-      font-weight: bold;
-      color: #234e52;
-    }
-    .section {
-      margin: 25px 0;
-      padding-top: 15px;
-      border-top: 1px solid #e2e8f0;
-    }
-    .section-title {
-      font-size: 20px;
-      font-weight: bold;
-      color: #1a365d;
-      margin-bottom: 15px;
-    }
+    .stat-card { background: #f0f7ff; border-radius: 8px; padding: 15px; margin: 5px 0; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Парсер скринов NBA 2K / ESportsBattle + Калькулятор тотала</h1>
     
-    <div class="section">
-      <div class="section-title">Загрузка скриншота</div>
-      <div class="controls">
-        <input id="file" type="file" accept="image/*" />
-        <button id="run" disabled>Распознать и рассчитать</button>
-        <div id="status" class="small">Выберите изображение</div>
-      </div>
-
-      <img id="preview" alt="preview" />
+    <div class="controls">
+      <input id="file" type="file" accept="image/*" />
+      <button id="run" disabled>Распознать и рассчитать</button>
+      <div id="status" class="small">Выберите изображение</div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Распознанный текст</div>
-      <div class="log" id="rawText">Текст появится после распознавания...</div>
-    </div>
+    <img id="preview" alt="preview" />
 
-    <div class="section">
-      <div class="section-title">Результаты парсинга</div>
-      <div id="parsed"></div>
-    </div>
+    <h3>Распознанный текст</h3>
+    <div class="log" id="rawText">Текст появится после распознавания...</div>
 
-    <div class="section">
-      <div class="section-title">Расчет тоталов</div>
-      <div id="calculations"></div>
-    </div>
+    <h3>Результаты парсинга</h3>
+    <div id="parsed"></div>
+
+    <h3>Расчет тоталов</h3>
+    <div id="calculations"></div>
   </div>
 
-  <!-- ✅ Подключаем последнюю версию Tesseract.js -->
+  <!-- Подключаем Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 
   <script>
@@ -144,7 +85,6 @@
   const rawTextEl = document.getElementById('rawText');
   const parsedEl = document.getElementById('parsed');
   const calculationsEl = document.getElementById('calculations');
-
   let currentImage = null;
 
   fileInput.addEventListener('change', e => {
@@ -163,26 +103,38 @@
   runBtn.addEventListener('click', async () => {
     if (!currentImage) return;
     runBtn.disabled = true;
-    status.textContent = 'Загружаю OCR движок...';
-    rawTextEl.textContent = '...';
+    status.textContent = 'Загрузка OCR...';
 
     try {
-      // ✅ Новый способ инициализации Tesseract.js
-      const worker = await Tesseract.createWorker('rus+eng', 1, {
+      // создаём и инициализируем движок (новый синтаксис Tesseract v4)
+      const worker = await Tesseract.createWorker('rus', 1, {
         logger: m => {
-          if (m.status && m.progress != null) {
+          if (m.status && m.progress != null)
             status.textContent = `${m.status} ${(m.progress*100).toFixed(0)}%`;
-          } else if (m.status) {
-            status.textContent = m.status;
-          }
+          else if (m.status) status.textContent = m.status;
         }
       });
 
-      status.textContent = 'Распознаю изображение...';
-      const { data: { text } } = await worker.recognize(currentImage);
-      rawTextEl.textContent = text.trim();
-      status.textContent = 'Парсинг распознанного текста...';
+      // предварительная обработка изображения (увеличение, контраст)
+      const img = document.createElement('img');
+      img.src = currentImage;
+      await img.decode();
 
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = img.width * 2;
+      canvas.height = img.height * 2;
+      ctx.filter = 'grayscale(1) contrast(1.4) brightness(1.1)';
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const preprocessed = canvas.toDataURL('image/png');
+      status.textContent = 'Распознаю текст...';
+      const { data: { text } } = await worker.recognize(preprocessed);
+
+      rawTextEl.textContent = text.trim() || '(ничего не распознано)';
+      console.log('OCR result:', text);
+
+      // парсим текст
       const parsed = parseMatchText(text);
       renderParsed(parsed);
       calculateAndDisplayTotals(parsed);
@@ -198,151 +150,56 @@
     }
   });
 
-  // ======== ФУНКЦИЯ ПАРСИНГА ==========
+  // ======== ПАРСЕР ========
   function parseMatchText(text) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length>0);
-    const joined = lines.join(' | ');
-    const result = { rawLines: lines, title: null, timeBlock: null, teams: [], format: '4x5' };
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const result = { teams: [] };
 
-    if (joined.match(/4\s*[x×]\s*4/)) result.format = '4x4';
-    if (joined.match(/4\s*[x×]\s*5/)) result.format = '4x5';
-
-    for (const l of lines) {
-      if (/NBA|Кибер|ESports/i.test(l)) {
-        result.title = l;
-        break;
+    const teamLines = lines.filter(l => /\d+\s+\d+\s+\d+/.test(l));
+    for (const l of teamLines) {
+      const nums = l.match(/\d+/g)?.map(Number) || [];
+      const name = l.replace(/\d+/g, '').trim();
+      if (nums.length >= 2) {
+        result.teams.push({
+          name,
+          perQuarter: nums.slice(0, -1),
+          total: nums.at(-1)
+        });
       }
     }
-    if (!result.title) result.title = lines[0] || '';
-
-    const timeQuarterRegex = /(\d{1,2}:\d{2}).{0,30}?(\d+)-я\s*четверть[^\d]*?([0-5]?\d:[0-5]?\d)/i;
-    for (const l of lines) {
-      const m = l.match(timeQuarterRegex);
-      if (m) {
-        result.timeBlock = { clock: m[1], quarter: parseInt(m[2]), timeRemaining: m[3], raw: l };
-        break;
-      }
-    }
-
-    const teamCandidates = [];
-    const numberLines = lines.filter(l => (l.match(/\d+/g) || []).length >= 2);
-
-    for (const l of numberLines) {
-      const nums = (l.match(/\d+/g) || []).map(n => parseInt(n, 10));
-      const beforeNums = l.split(/\d/)[0].trim();
-      let name = beforeNums;
-      if (name.length < 2) {
-        const idx = lines.indexOf(l);
-        if (idx > 0) name = lines[idx - 1];
-      }
-      teamCandidates.push({ raw: l, name, numbers: nums });
-    }
-
-    if (teamCandidates.length >= 2) {
-      result.teams = teamCandidates.slice(0, 2).map(tc => ({
-        name: tc.name,
-        perQuarter: tc.numbers.slice(0, -1),
-        total: tc.numbers[tc.numbers.length - 1],
-        raw: tc.raw
-      }));
-    }
-
     return result;
   }
 
-  // ======== ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ ==========
+  // ======== ВЫВОД ========
   function renderParsed(parsed) {
     parsedEl.innerHTML = '';
-
-    const title = document.createElement('div');
-    title.innerHTML = `<strong>Матч:</strong> ${escapeHtml(parsed.title || '')}`;
-    parsedEl.appendChild(title);
-
-    if (parsed.timeBlock) {
-      const tdiv = document.createElement('div');
-      tdiv.innerHTML = `<strong>Время/четверть:</strong> ${escapeHtml(parsed.timeBlock.raw)}`;
-      parsedEl.appendChild(tdiv);
-    }
-
-    const formatDiv = document.createElement('div');
-    formatDiv.innerHTML = `<strong>Формат игры:</strong> ${parsed.format === '4x4' ? '4 четверти по 4 минуты' : '4 четверти по 5 минут'}`;
-    parsedEl.appendChild(formatDiv);
-
-    if (parsed.teams && parsed.teams.length > 0) {
-      const t = document.createElement('div');
-      t.innerHTML = '<strong>Команды:</strong>';
-      parsedEl.appendChild(t);
-
-      const table = document.createElement('table');
-      table.innerHTML = `
-        <thead><tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr></thead>
-        <tbody>${parsed.teams.map(t => `
-          <tr>
-            <td>${escapeHtml(t.name)}</td>
-            <td>${t.perQuarter.join(' + ')}</td>
-            <td>${t.total}</td>
-          </tr>`).join('')}
-        </tbody>`;
-      parsedEl.appendChild(table);
-    }
-  }
-
-  // ======== РАСЧЁТ ТОТАЛОВ ==========
-  function calculateAndDisplayTotals(parsed) {
-    calculationsEl.innerHTML = '';
-    if (!parsed.teams || parsed.teams.length < 2) {
-      calculationsEl.innerHTML = '<div class="prediction">Недостаточно данных для расчета тоталов</div>';
+    if (!parsed.teams.length) {
+      parsedEl.innerHTML = '<p>Не удалось найти команды и счёт.</p>';
       return;
     }
-
-    const t1 = parsed.teams[0], t2 = parsed.teams[1];
-    const totalScore = (t1.total || 0) + (t2.total || 0);
-    const quarterLength = parsed.format === '4x4' ? 4 : 5;
-    const totalMinutes = quarterLength * 4;
-
-    let minutesPlayed = 0, minutesRemaining = totalMinutes;
-    if (parsed.timeBlock && parsed.timeBlock.quarter) {
-      const q = parsed.timeBlock.quarter;
-      const [min, sec] = parsed.timeBlock.timeRemaining ? parsed.timeBlock.timeRemaining.split(':').map(Number) : [0,0];
-      const remainingInQuarter = min + sec / 60;
-      minutesPlayed = (q - 1) * quarterLength + (quarterLength - remainingInQuarter);
-      minutesRemaining = totalMinutes - minutesPlayed;
+    const table = document.createElement('table');
+    table.innerHTML = '<tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr>';
+    for (const t of parsed.teams) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${t.name}</td><td>${t.perQuarter.join(' + ')}</td><td>${t.total}</td>`;
+      table.appendChild(tr);
     }
-
-    const tempo = minutesPlayed > 0 ? totalScore / minutesPlayed : 0;
-    const projectedRemaining = Math.round(tempo * minutesRemaining);
-    const projectedTotal = totalScore + projectedRemaining;
-    const projectedNextQuarter = Math.round(tempo * quarterLength);
-
-    const statsHTML = `
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-value">${totalScore}</div><div class="stat-label">Текущий общий счёт</div></div>
-        <div class="stat-card"><div class="stat-value">${minutesPlayed.toFixed(1)}</div><div class="stat-label">Сыграно минут</div></div>
-        <div class="stat-card"><div class="stat-value">${minutesRemaining.toFixed(1)}</div><div class="stat-label">Осталось минут</div></div>
-        <div class="stat-card"><div class="stat-value">${tempo.toFixed(2)}</div><div class="stat-label">Темп (очков/мин)</div></div>
-      </div>
-    `;
-
-    const predictionsHTML = `
-      <div class="prediction">
-        <div class="prediction-title">Прогноз общего тотала матча</div>
-        <div class="prediction-value">${projectedTotal}</div>
-        <div class="small">Текущий счёт (${totalScore}) + прогноз на оставшееся время (${projectedRemaining})</div>
-      </div>
-      <div class="prediction">
-        <div class="prediction-title">Прогноз тотала следующей четверти</div>
-        <div class="prediction-value">${projectedNextQuarter}</div>
-        <div class="small">Темп (${tempo.toFixed(2)}) × длина четверти (${quarterLength} мин)</div>
-      </div>
-    `;
-
-    calculationsEl.innerHTML = statsHTML + predictionsHTML;
+    parsedEl.appendChild(table);
   }
 
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  // ======== РАСЧЁТ ТОТАЛОВ ========
+  function calculateAndDisplayTotals(parsed) {
+    calculationsEl.innerHTML = '';
+    if (parsed.teams.length < 2) {
+      calculationsEl.textContent = 'Недостаточно данных.';
+      return;
+    }
+    const totalScore = parsed.teams[0].total + parsed.teams[1].total;
+    const el = document.createElement('div');
+    el.className = 'stat-card';
+    el.innerHTML = `<b>Общий счёт:</b> ${totalScore}<br><b>Средний тотал на четверть:</b> ${(totalScore/3).toFixed(1)}`;
+    calculationsEl.appendChild(el);
   }
   </script>
 </body>
 </html>
-
