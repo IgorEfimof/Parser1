@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Парсер скринов с матчей + Калькулятор тотала (исправлено)</title>
+  <title>Парсер скринов NBA 2K / ESportsBattle + Калькулятор тотала</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body { 
@@ -16,7 +16,7 @@
       padding: 20px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     }
-    h1 { font-size:20px; margin-bottom:6px; color: #1a365d; }
+    h1 { font-size:24px; margin-bottom:6px; color: #1a365d; }
     .controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
     input[type=file] { cursor:pointer; }
     button { 
@@ -95,12 +95,11 @@
       border-top: 1px solid #e2e8f0;
     }
     .section-title {
-      font-size: 18px;
+      font-size: 20px;
       font-weight: bold;
       color: #1a365d;
-      margin-bottom: 12px;
+      margin-bottom: 15px;
     }
-    .hint { font-size:13px; color:#666; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -115,9 +114,7 @@
         <div id="status" class="small">Выберите изображение</div>
       </div>
 
-      <canvas id="canvasPreview" style="display:none"></canvas>
       <img id="preview" alt="preview" />
-      <div class="hint">Подсказка: для лучшего результата загружайте чёткие, не обрезанные скрины.</div>
     </div>
 
     <div class="section">
@@ -136,29 +133,26 @@
     </div>
   </div>
 
-  <!-- Tesseract.js CDN -->
+  <!-- ✅ Подключаем последнюю версию Tesseract.js -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
 
   <script>
   const fileInput = document.getElementById('file');
   const preview = document.getElementById('preview');
-  const canvasPreview = document.getElementById('canvasPreview');
   const runBtn = document.getElementById('run');
   const status = document.getElementById('status');
   const rawTextEl = document.getElementById('rawText');
   const parsedEl = document.getElementById('parsed');
   const calculationsEl = document.getElementById('calculations');
 
-  let currentImageFile = null;
-  let preprocessedDataUrl = null;
+  let currentImage = null;
 
   fileInput.addEventListener('change', e => {
     const f = e.target.files[0];
     if (!f) return;
-    currentImageFile = f;
     const url = URL.createObjectURL(f);
     preview.src = url;
-    preprocessedDataUrl = null;
+    currentImage = url;
     runBtn.disabled = false;
     status.textContent = 'Готово. Нажми "Распознать и рассчитать"';
     rawTextEl.textContent = 'Текст появится после распознавания...';
@@ -166,64 +160,15 @@
     calculationsEl.innerHTML = '';
   });
 
-  // Простая предобработка: масштабирование + повышение контраста, возвращает dataURL
-  async function preprocessImage(file, maxWidth = 1600) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const ratio = Math.min(1, maxWidth / img.width);
-        const w = Math.round(img.width * ratio);
-        const h = Math.round(img.height * ratio);
-        canvasPreview.width = w;
-        canvasPreview.height = h;
-        const ctx = canvasPreview.getContext('2d');
-
-        // Draw with slight upscale/resize and contrast boost
-        ctx.drawImage(img, 0, 0, w, h);
-
-        // basic contrast/brightness filter
-        try {
-          const imageData = ctx.getImageData(0, 0, w, h);
-          const data = imageData.data;
-          const contrast = 1.1; // small boost
-          const brightness = 5;
-          for (let i = 0; i < data.length; i += 4) {
-            for (let c = 0; c < 3; c++) {
-              let v = data[i + c];
-              v = ((v - 128) * contrast) + 128 + brightness;
-              data[i + c] = Math.max(0, Math.min(255, v));
-            }
-          }
-          ctx.putImageData(imageData, 0, 0);
-        } catch (err) {
-          // some browsers may block getImageData for cross-origin images; ignore
-          console.warn('preprocess: imageData failed', err);
-        }
-
-        resolve(canvasPreview.toDataURL('image/jpeg', 0.9));
-      };
-      img.onerror = e => reject(e);
-      img.src = URL.createObjectURL(file);
-    });
-  }
-
   runBtn.addEventListener('click', async () => {
-    if (!currentImageFile) return;
+    if (!currentImage) return;
     runBtn.disabled = true;
-    status.textContent = 'Подготавливаю изображение...';
+    status.textContent = 'Загружаю OCR движок...';
     rawTextEl.textContent = '...';
 
     try {
-      // предобработка (помогает OCR)
-      try {
-        preprocessedDataUrl = await preprocessImage(currentImageFile);
-      } catch (e) {
-        console.warn('Preprocess failed, using raw image', e);
-        preprocessedDataUrl = URL.createObjectURL(currentImageFile);
-      }
-
-      status.textContent = 'Загружаю OCR движок...';
-      const worker = Tesseract.createWorker({
+      // ✅ Новый способ инициализации Tesseract.js
+      const worker = await Tesseract.createWorker('rus+eng', 1, {
         logger: m => {
           if (m.status && m.progress != null) {
             status.textContent = `${m.status} ${(m.progress*100).toFixed(0)}%`;
@@ -233,20 +178,13 @@
         }
       });
 
-      await worker.load();
-      // рус+английский
-      await worker.loadLanguage('rus+eng');
-      await worker.initialize('rus+eng');
-      // не трогаем PSM если не нужно; можно добавить позже
       status.textContent = 'Распознаю изображение...';
-
-      const { data: { text } } = await worker.recognize(preprocessedDataUrl || URL.createObjectURL(currentImageFile));
-      rawTextEl.textContent = text.trim() || '(пусто)';
+      const { data: { text } } = await worker.recognize(currentImage);
+      rawTextEl.textContent = text.trim();
       status.textContent = 'Парсинг распознанного текста...';
 
       const parsed = parseMatchText(text);
       renderParsed(parsed);
-
       calculateAndDisplayTotals(parsed);
 
       await worker.terminate();
@@ -260,138 +198,59 @@
     }
   });
 
-  // ---- Улучшенный парсер ----
+  // ======== ФУНКЦИЯ ПАРСИНГА ==========
   function parseMatchText(text) {
-    const rawLines = (text || '').split(/\r?\n/).map(l => l.replace(/\u00A0/g,' ').trim()).filter(l => l.length>0);
-    const joined = rawLines.join(' | ');
-    const result = {
-      rawLines,
-      title: null,
-      timeBlock: null,
-      teams: [],
-      format: '4x5'
-    };
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length>0);
+    const joined = lines.join(' | ');
+    const result = { rawLines: lines, title: null, timeBlock: null, teams: [], format: '4x5' };
 
-    // detect format
-    if (/4\s*[x×]\s*4/i.test(joined)) result.format = '4x4';
-    else if (/4\s*[x×]\s*5/i.test(joined)) result.format = '4x5';
+    if (joined.match(/4\s*[x×]\s*4/)) result.format = '4x4';
+    if (joined.match(/4\s*[x×]\s*5/)) result.format = '4x5';
 
-    // title guess
-    for (const l of rawLines) {
-      if (/(NBA|Кибер|ESports|ESport|ESportsBattle|Кибербаскетбол)/i.test(l)) {
+    for (const l of lines) {
+      if (/NBA|Кибер|ESports/i.test(l)) {
         result.title = l;
         break;
       }
     }
-    if (!result.title) result.title = rawLines[0] || '';
+    if (!result.title) result.title = lines[0] || '';
 
-    // time / quarter detection (flexible)
-    // Examples to match: "23:15 | 3-я четверть, 04:39" or "23:15 3-я четверть 04:39" or "3-я четверть 04:39"
-    for (const l of rawLines) {
-      // find clock like 23:15
-      const clockMatch = l.match(/(\d{1,2}:\d{2})/);
-      const quarterMatch = l.match(/([1-4])\s*[-–]?\s*я\s*четверть|([1-4])\s*четверть|(\d)-я\s*четверть/i);
-      const remainingMatch = l.match(/([0-5]?\d:[0-5]?\d)/);
-      if (quarterMatch) {
-        const quarter = parseInt( (quarterMatch[1]||quarterMatch[2]||quarterMatch[3]) , 10 );
-        result.timeBlock = {
-          clock: clockMatch ? clockMatch[1] : null,
-          quarter: quarter,
-          timeRemaining: remainingMatch ? remainingMatch[1] : null,
-          raw: l
-        };
-        break;
-      }
-      // fallback: line contains "четверть"
-      if (/четверть/i.test(l) && !result.timeBlock) {
-        const q = (l.match(/[1-4]/) || [null])[0];
-        result.timeBlock = { clock: clockMatch ? clockMatch[1] : null, quarter: q ? parseInt(q,10) : null, timeRemaining: remainingMatch ? remainingMatch[1] : null, raw: l };
+    const timeQuarterRegex = /(\d{1,2}:\d{2}).{0,30}?(\d+)-я\s*четверть[^\d]*?([0-5]?\d:[0-5]?\d)/i;
+    for (const l of lines) {
+      const m = l.match(timeQuarterRegex);
+      if (m) {
+        result.timeBlock = { clock: m[1], quarter: parseInt(m[2]), timeRemaining: m[3], raw: l };
         break;
       }
     }
 
-    // ---- teams detection ----
-    // Strategy:
-    // 1) Collect lines that contain >=2 numbers (likely include per-quarter + total)
-    // 2) Also check pairs: [name line] + [numbers line]
-    // 3) If still not found, try to extract any pair of name+numbers by greedy scan.
+    const teamCandidates = [];
+    const numberLines = lines.filter(l => (l.match(/\d+/g) || []).length >= 2);
 
-    const lines = rawLines.slice();
-    const numberSeqRegex = /\b\d{1,3}\b/g;
-
-    // 1) direct lines with >=2 numbers
-    const candidateLines = lines.map((l, idx) => ({ line: l, idx, nums: Array.from(l.matchAll(numberSeqRegex)).map(m => parseInt(m[0],10)) }))
-                                .filter(x => x.nums.length >= 2);
-
-    // 2) name + next-line numbers
-    for (let i=0;i<lines.length-1;i++) {
-      const a = lines[i], b = lines[i+1];
-      const numsB = Array.from(b.matchAll(numberSeqRegex)).map(m => parseInt(m[0],10));
-      const lettersA = /[A-Za-zА-Яа-яЁё]/.test(a);
-      if (lettersA && numsB.length >= 2) {
-        // ensure we don't duplicate if b already in candidateLines
-        if (!candidateLines.some(c => c.idx === i+1)) {
-          candidateLines.push({ line: a + ' ' + b, idx: i, nums: numsB });
-        }
+    for (const l of numberLines) {
+      const nums = (l.match(/\d+/g) || []).map(n => parseInt(n, 10));
+      const beforeNums = l.split(/\d/)[0].trim();
+      let name = beforeNums;
+      if (name.length < 2) {
+        const idx = lines.indexOf(l);
+        if (idx > 0) name = lines[idx - 1];
       }
+      teamCandidates.push({ raw: l, name, numbers: nums });
     }
 
-    // Sort by original order
-    candidateLines.sort((a,b) => a.idx - b.idx);
-
-    // pick first two distinct teams
-    const teams = [];
-    for (const cand of candidateLines) {
-      if (teams.length >= 2) break;
-      // Extract name: take substring before the first number occurrence (if exists), else take words
-      const nums = cand.nums;
-      let namePart = cand.line;
-      // cut off trailing numbers
-      namePart = namePart.replace(/\b\d{1,3}\b/g, '').replace(/\s{2,}/g, ' ').trim();
-      // if still long, take first 40 chars
-      namePart = namePart.split('|')[0].trim();
-      if (!namePart) namePart = '(неизвестно)';
-      teams.push({
-        name: namePart,
-        perQuarter: nums.slice(0, -1),
-        total: nums[nums.length - 1] ?? null,
-        raw: cand.line
-      });
+    if (teamCandidates.length >= 2) {
+      result.teams = teamCandidates.slice(0, 2).map(tc => ({
+        name: tc.name,
+        perQuarter: tc.numbers.slice(0, -1),
+        total: tc.numbers[tc.numbers.length - 1],
+        raw: tc.raw
+      }));
     }
-
-    // if not enough teams found, try a looser extraction: look for patterns like "Атланта Хокс (Nemo)" then later a line with 4 numbers
-    if (teams.length < 2) {
-      for (let i=0;i<lines.length;i++) {
-        if (teams.length>=2) break;
-        const l = lines[i];
-        const nums = Array.from(l.matchAll(numberSeqRegex)).map(m => parseInt(m[0],10));
-        if (nums.length >= 2) {
-          // If there is previous textual line with letters, use it as name
-          let name = l.replace(/\b\d{1,3}\b/g, '').replace(/\s{2,}/g, ' ').trim();
-          if (!/[A-Za-zА-Яа-яЁё]/.test(name)) {
-            if (i>0 && /[A-Za-zА-Яа-яЁё]/.test(lines[i-1])) name = lines[i-1];
-          }
-          teams.push({
-            name: name || '(неизвестно)',
-            perQuarter: nums.slice(0, -1),
-            total: nums[nums.length - 1] ?? null,
-            raw: l
-          });
-        }
-      }
-    }
-
-    // final cleanup: ensure perQuarter lengths consistent (pad missing with null)
-    for (const t of teams) {
-      if (!Array.isArray(t.perQuarter)) t.perQuarter = [];
-      // remove possible zeros from OCR noise? leave as is
-    }
-
-    result.teams = teams.slice(0,2);
 
     return result;
   }
 
+  // ======== ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ ==========
   function renderParsed(parsed) {
     parsedEl.innerHTML = '';
 
@@ -401,7 +260,7 @@
 
     if (parsed.timeBlock) {
       const tdiv = document.createElement('div');
-      tdiv.innerHTML = `<strong>Время/четверть:</strong> ${escapeHtml(parsed.timeBlock.raw || '')}`;
+      tdiv.innerHTML = `<strong>Время/четверть:</strong> ${escapeHtml(parsed.timeBlock.raw)}`;
       parsedEl.appendChild(tdiv);
     }
 
@@ -409,149 +268,75 @@
     formatDiv.innerHTML = `<strong>Формат игры:</strong> ${parsed.format === '4x4' ? '4 четверти по 4 минуты' : '4 четверти по 5 минут'}`;
     parsedEl.appendChild(formatDiv);
 
-    if (parsed.teams && parsed.teams.length>0) {
+    if (parsed.teams && parsed.teams.length > 0) {
       const t = document.createElement('div');
       t.innerHTML = '<strong>Команды:</strong>';
       parsedEl.appendChild(t);
 
       const table = document.createElement('table');
-      const thead = document.createElement('thead');
-      thead.innerHTML = '<tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr>';
-      table.appendChild(thead);
-      const tbody = document.createElement('tbody');
-      for (const team of parsed.teams) {
-        const tr = document.createElement('tr');
-        const nameTd = document.createElement('td');
-        nameTd.textContent = team.name || '(не найдено)';
-        const pqTd = document.createElement('td');
-        pqTd.textContent = (team.perQuarter && team.perQuarter.length>0) ? team.perQuarter.join(' + ') : '-';
-        const totalTd = document.createElement('td');
-        totalTd.textContent = (team.total != null) ? team.total : '-';
-        tr.appendChild(nameTd); tr.appendChild(pqTd); tr.appendChild(totalTd);
-        tbody.appendChild(tr);
-      }
-      table.appendChild(tbody);
+      table.innerHTML = `
+        <thead><tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr></thead>
+        <tbody>${parsed.teams.map(t => `
+          <tr>
+            <td>${escapeHtml(t.name)}</td>
+            <td>${t.perQuarter.join(' + ')}</td>
+            <td>${t.total}</td>
+          </tr>`).join('')}
+        </tbody>`;
       parsedEl.appendChild(table);
-    } else {
-      const p = document.createElement('div');
-      p.textContent = 'Не удалось найти строки с командами и числами.';
-      parsedEl.appendChild(p);
     }
-
-    const rawBlock = document.createElement('details');
-    rawBlock.style.marginTop = '10px';
-    rawBlock.innerHTML = `<summary class="small">Показать/скрыть распознанные строки (для отладки)</summary>
-      <div class="small" style="margin-top:6px">${escapeHtml(parsed.rawLines.join('\n'))}</div>`;
-    parsedEl.appendChild(rawBlock);
   }
 
-  // ---- Calculations ----
+  // ======== РАСЧЁТ ТОТАЛОВ ==========
   function calculateAndDisplayTotals(parsed) {
     calculationsEl.innerHTML = '';
-
     if (!parsed.teams || parsed.teams.length < 2) {
       calculationsEl.innerHTML = '<div class="prediction">Недостаточно данных для расчета тоталов</div>';
       return;
     }
 
-    const team1 = parsed.teams[0];
-    const team2 = parsed.teams[1];
-
-    // if totals missing, try to sum perQuarter
-    const sumIfNeeded = (t) => {
-      if (t.total == null || isNaN(t.total)) {
-        const nums = (t.perQuarter || []).map(n=>Number(n)||0);
-        const s = nums.reduce((a,b)=>a+b,0);
-        return s || null;
-      }
-      return Number(t.total);
-    };
-
-    const total1 = sumIfNeeded(team1);
-    const total2 = sumIfNeeded(team2);
-
-    if (total1 == null || total2 == null) {
-      calculationsEl.innerHTML = '<div class="prediction">Не удалось извлечь итоговые счёты команд для расчёта.</div>';
-      return;
-    }
-
-    const totalScore = total1 + total2;
-
-    // Determine game timing
+    const t1 = parsed.teams[0], t2 = parsed.teams[1];
+    const totalScore = (t1.total || 0) + (t2.total || 0);
     const quarterLength = parsed.format === '4x4' ? 4 : 5;
-    const totalQuarters = 4;
-    const totalGameMinutes = quarterLength * totalQuarters;
+    const totalMinutes = quarterLength * 4;
 
-    let minutesPlayed = 0;
-    let minutesRemaining = totalGameMinutes;
-
+    let minutesPlayed = 0, minutesRemaining = totalMinutes;
     if (parsed.timeBlock && parsed.timeBlock.quarter) {
-      const currentQuarter = Number(parsed.timeBlock.quarter) || 0;
-      const quarterTime = parsed.timeBlock.timeRemaining || null;
-
-      let quarterMinutesRemaining = 0;
-      if (quarterTime && /:/.test(quarterTime)) {
-        const [minStr, secStr] = quarterTime.split(':');
-        const min = Number(minStr) || 0;
-        const sec = Number(secStr) || 0;
-        quarterMinutesRemaining = min + sec/60;
-      } else {
-        // if no remaining time available, assume half quarter played (fallback)
-        quarterMinutesRemaining = quarterLength / 2;
-      }
-
-      const completedQuarters = Math.max(0, (currentQuarter - 1));
-      minutesPlayed = completedQuarters * quarterLength + Math.max(0, (quarterLength - quarterMinutesRemaining));
-      minutesRemaining = Math.max(0, totalGameMinutes - minutesPlayed);
-    } else {
-      // if no time info, fallback: assume 0 played (so tempo undefined), or try to estimate from quarters present
-      minutesPlayed = 0;
-      minutesRemaining = totalGameMinutes;
+      const q = parsed.timeBlock.quarter;
+      const [min, sec] = parsed.timeBlock.timeRemaining ? parsed.timeBlock.timeRemaining.split(':').map(Number) : [0,0];
+      const remainingInQuarter = min + sec / 60;
+      minutesPlayed = (q - 1) * quarterLength + (quarterLength - remainingInQuarter);
+      minutesRemaining = totalMinutes - minutesPlayed;
     }
 
-    const tempo = minutesPlayed > 0 ? totalScore / minutesPlayed : (totalScore / 1); // if zero minutes, use big estimate (avoid div0)
-
-    const projectedRemainingPoints = Math.round(tempo * minutesRemaining);
-    const projectedTotal = totalScore + projectedRemainingPoints;
+    const tempo = minutesPlayed > 0 ? totalScore / minutesPlayed : 0;
+    const projectedRemaining = Math.round(tempo * minutesRemaining);
+    const projectedTotal = totalScore + projectedRemaining;
     const projectedNextQuarter = Math.round(tempo * quarterLength);
 
-    // Render stats
     const statsHTML = `
       <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value">${totalScore}</div>
-          <div class="stat-label">Текущий общий счет</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${minutesPlayed.toFixed(1)}</div>
-          <div class="stat-label">Сыграно минут</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${minutesRemaining.toFixed(1)}</div>
-          <div class="stat-label">Осталось минут</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">${tempo.toFixed(2)}</div>
-          <div class="stat-label">Темп (очков/минуту)</div>
-        </div>
+        <div class="stat-card"><div class="stat-value">${totalScore}</div><div class="stat-label">Текущий общий счёт</div></div>
+        <div class="stat-card"><div class="stat-value">${minutesPlayed.toFixed(1)}</div><div class="stat-label">Сыграно минут</div></div>
+        <div class="stat-card"><div class="stat-value">${minutesRemaining.toFixed(1)}</div><div class="stat-label">Осталось минут</div></div>
+        <div class="stat-card"><div class="stat-value">${tempo.toFixed(2)}</div><div class="stat-label">Темп (очков/мин)</div></div>
       </div>
     `;
-    calculationsEl.innerHTML = statsHTML;
 
     const predictionsHTML = `
       <div class="prediction">
         <div class="prediction-title">Прогноз общего тотала матча</div>
         <div class="prediction-value">${projectedTotal}</div>
-        <div class="small">Текущий счет (${totalScore}) + прогноз на оставшееся время (${projectedRemainingPoints})</div>
+        <div class="small">Текущий счёт (${totalScore}) + прогноз на оставшееся время (${projectedRemaining})</div>
       </div>
-      
       <div class="prediction">
         <div class="prediction-title">Прогноз тотала следующей четверти</div>
         <div class="prediction-value">${projectedNextQuarter}</div>
         <div class="small">Темп (${tempo.toFixed(2)}) × длина четверти (${quarterLength} мин)</div>
       </div>
     `;
-    calculationsEl.innerHTML += predictionsHTML;
+
+    calculationsEl.innerHTML = statsHTML + predictionsHTML;
   }
 
   function escapeHtml(s) {
@@ -560,3 +345,4 @@
   </script>
 </body>
 </html>
+
