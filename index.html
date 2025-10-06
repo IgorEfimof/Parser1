@@ -2,28 +2,24 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>NBA 2K OCR Парсер</title>
+  <title>NBA 2K OCR Парсер + Расчёт тотала</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
       font-family: system-ui, sans-serif;
-      background: #f5f6fa;
+      background: #f6f8fa;
+      color: #222;
       padding: 24px;
       max-width: 900px;
       margin: auto;
-      color: #222;
     }
+    h1 { color: #1a365d; font-size: 22px; margin-bottom: 8px; }
     .card {
       background: white;
-      border-radius: 12px;
+      border-radius: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
       padding: 20px;
       margin-bottom: 20px;
-    }
-    h1 {
-      font-size: 22px;
-      margin-bottom: 12px;
-      color: #1a365d;
     }
     button {
       background: #2563eb;
@@ -34,19 +30,8 @@
       font-weight: 600;
       cursor: pointer;
     }
-    button:disabled {
-      background: #94a3b8;
-      cursor: not-allowed;
-    }
-    input[type=file] {
-      margin-bottom: 10px;
-    }
-    #preview {
-      max-width: 100%;
-      margin-top: 10px;
-      border-radius: 8px;
-      border: 1px solid #ddd;
-    }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    #preview { max-width:100%; margin-top:10px; border-radius:8px; border:1px solid #ddd; }
     .log {
       background: #f9fafb;
       border-radius: 8px;
@@ -56,17 +41,11 @@
       font-size: 14px;
       white-space: pre-wrap;
     }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 10px;
+    .result {
+      font-size: 18px;
+      line-height: 1.6;
     }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 8px 10px;
-      text-align: left;
-    }
-    th { background: #e7f0ff; }
+    .highlight { font-weight: bold; color: #1a365d; }
   </style>
 </head>
 <body>
@@ -74,7 +53,7 @@
   <div class="card">
     <h1>Парсер скринов NBA 2K / ESportsBattle</h1>
     <input type="file" id="file" accept="image/*" />
-    <button id="run" disabled>Распознать</button>
+    <button id="run" disabled>Распознать и рассчитать</button>
     <div id="status">Выберите изображение</div>
     <img id="preview" alt="preview" />
   </div>
@@ -86,10 +65,9 @@
 
   <div class="card">
     <h3>Результаты</h3>
-    <div id="parsed"></div>
+    <div id="parsed" class="result"></div>
   </div>
 
-  <!-- ✅ Используем актуальную версию tesseract.js (v5) -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
   <script>
     const fileInput = document.getElementById('file');
@@ -113,33 +91,31 @@
     runBtn.addEventListener('click', async () => {
       if (!currentImage) return;
       runBtn.disabled = true;
+      parsedEl.innerHTML = '';
       status.textContent = "Запуск OCR...";
 
       try {
-        // Считываем файл как DataURL
         const reader = new FileReader();
         reader.readAsDataURL(currentImage);
         await new Promise(resolve => reader.onload = resolve);
         const dataUrl = reader.result;
 
-        status.textContent = "Распознаю текст...";
         const { data: { text } } = await Tesseract.recognize(
-          dataUrl,
-          'rus+eng',
+          dataUrl, 'rus+eng',
           {
             logger: m => {
               if (m.status && m.progress != null)
                 status.textContent = `${m.status}: ${(m.progress * 100).toFixed(0)}%`;
-            }
+            },
+            tessedit_char_whitelist: '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:.()-+/%x× '
           }
         );
 
         rawTextEl.textContent = text.trim() || "(ничего не найдено)";
-        console.log("OCR result:", text);
-
-        const parsed = parseText(text);
-        renderResults(parsed);
+        const parsed = parseMatch(text);
+        renderResult(parsed);
         status.textContent = "Готово ✅";
+
       } catch (err) {
         console.error(err);
         status.textContent = "Ошибка: " + err.message;
@@ -149,37 +125,86 @@
       }
     });
 
-    function parseText(text) {
+    // --- Основной парсер ---
+    function parseMatch(text) {
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      const teams = [];
-      for (const l of lines) {
-        if (/\d+\s+\d+\s+\d+/.test(l)) {
-          const nums = l.match(/\d+/g)?.map(Number) || [];
-          const name = l.replace(/\d+/g, '').trim();
-          teams.push({ name, perQuarter: nums.slice(0, -1), total: nums.at(-1) });
+      const result = {
+        team1: null, score1: null,
+        team2: null, score2: null,
+        totalLine: null, handicap: null,
+        predicted: null
+      };
+
+      // --- ищем строки с командами и счётом ---
+      const scoreLines = lines.filter(l => /\d+\s+\d+\s+\d+/.test(l) || /\d+\s+\d+/.test(l));
+      if (scoreLines.length >= 2) {
+        const [l1, l2] = scoreLines;
+        const n1 = (l1.match(/\d+/g) || []).map(Number);
+        const n2 = (l2.match(/\d+/g) || []).map(Number);
+        result.team1 = l1.replace(/[0-9]/g, '').trim();
+        result.team2 = l2.replace(/[0-9]/g, '').trim();
+        result.score1 = n1.at(-1) || 0;
+        result.score2 = n2.at(-1) || 0;
+      } else {
+        // fallback — ищем любые строки с 2-3 числами подряд
+        const candidates = lines.filter(l => /\d+\D+\d+/.test(l));
+        if (candidates.length >= 2) {
+          const nums1 = candidates[0].match(/\d+/g)?.map(Number) || [];
+          const nums2 = candidates[1].match(/\d+/g)?.map(Number) || [];
+          result.score1 = nums1.at(-1) || 0;
+          result.score2 = nums2.at(-1) || 0;
         }
       }
-      return teams;
+
+      // --- ищем форы ---
+      const handicapLine = lines.find(l => /фора|Фора|Ф1|Ф2/.test(l));
+      if (handicapLine) {
+        const f1 = handicapLine.match(/Ф1\s*\(([^)]+)\)/i);
+        const f2 = handicapLine.match(/Ф2\s*\(([^)]+)\)/i);
+        if (f1 && f2) result.handicap = `Ф1(${f1[1]}) / Ф2(${f2[1]})`;
+      }
+
+      // --- ищем тоталы ---
+      const totalLine = lines.find(l => /ТБ|ТМ/.test(l));
+      if (totalLine) {
+        const tm = totalLine.match(/ТМ\s*\(([\d.]+)\)/i);
+        const tb = totalLine.match(/ТБ\s*\(([\d.]+)\)/i);
+        if (tm && tb) result.totalLine = `ТМ(${tm[1]}) / ТБ(${tb[1]})`;
+      }
+
+      // --- вычисляем общий и прогноз ---
+      if (result.score1 != null && result.score2 != null) {
+        const total = result.score1 + result.score2;
+        result.totalNow = total;
+
+        // если найден базовый тотал, попробуем прогнозировать
+        const base = totalLine?.match(/([\d.]+)/)?.[1];
+        if (base) {
+          const totalNum = parseFloat(base);
+          const progress = total / totalNum;
+          const predicted = Math.round(total / progress);
+          result.predicted = predicted;
+        }
+      }
+
+      return result;
     }
 
-    function renderResults(teams) {
-      parsedEl.innerHTML = '';
-      if (!teams.length) {
-        parsedEl.textContent = 'Не удалось распознать команды.';
+    function renderResult(r) {
+      if (!r || (r.score1 == null && r.score2 == null)) {
+        parsedEl.innerHTML = "Не удалось извлечь данные.";
         return;
       }
-      const table = document.createElement('table');
-      table.innerHTML = '<tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr>';
-      for (const t of teams) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${t.name}</td>
-          <td>${t.perQuarter.join(' + ')}</td>
-          <td>${t.total}</td>`;
-        table.appendChild(tr);
-      }
-      parsedEl.appendChild(table);
+      parsedEl.innerHTML = `
+        <div><span class="highlight">Команда 1:</span> ${r.team1 || '-'} — ${r.score1}</div>
+        <div><span class="highlight">Команда 2:</span> ${r.team2 || '-'} — ${r.score2}</div>
+        <div><span class="highlight">Общий тотал:</span> ${r.totalNow || 0}</div>
+        ${r.totalLine ? `<div><span class="highlight">Линия тотала:</span> ${r.totalLine}</div>` : ''}
+        ${r.handicap ? `<div><span class="highlight">Фора:</span> ${r.handicap}</div>` : ''}
+        ${r.predicted ? `<div><span class="highlight">Прогнозируемый итог:</span> ${r.predicted}</div>` : ''}
+      `;
     }
   </script>
 </body>
 </html>
+
