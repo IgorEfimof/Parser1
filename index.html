@@ -2,204 +2,195 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Парсер скринов NBA 2K + Калькулятор тотала</title>
+  <title>NBA 2K Парсер скриншотов</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { 
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; 
-      max-width:900px; margin:24px auto; padding:0 16px; color:#222; 
-      background: #f5f5f5;
-    }
-    .container {
-      background: white;
-      border-radius: 12px;
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f4f6fa;
+      color: #222;
       padding: 20px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      max-width: 900px;
+      margin: auto;
     }
-    h1 { font-size:24px; margin-bottom:6px; color: #1a365d; }
-    .controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; flex-wrap: wrap; }
-    input[type=file] { cursor:pointer; }
-    button { 
-      padding:10px 16px; 
-      border:0; 
-      background:#3182ce; 
-      color:white; 
-      border-radius:6px; 
-      cursor:pointer; 
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 22px;
+      color: #1a365d;
+    }
+    button {
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      cursor: pointer;
       font-weight: 600;
     }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    #preview { 
-      max-width:100%; 
-      border:1px solid #ddd; 
-      margin:12px 0; 
-      display:block; 
-      border-radius: 8px;
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
     }
-    .log { 
-      background:#f7f7f7; 
-      border:1px solid #eee; 
-      padding:12px; 
-      border-radius:8px; 
-      white-space:pre-wrap; 
+    #preview {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      margin-top: 10px;
+    }
+    .log {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 12px;
+      white-space: pre-wrap;
       font-family: monospace;
       font-size: 14px;
+      border: 1px solid #ddd;
+      margin-top: 10px;
     }
-    table { border-collapse:collapse; width:100%; max-width:600px; margin: 10px 0; }
-    td, th { border:1px solid #ddd; padding:8px 12px; text-align:left; }
-    th { background:#f0f7ff; }
-    .small { font-size:13px; color:#555; }
-    .stat-card { background: #f0f7ff; border-radius: 8px; padding: 15px; margin: 5px 0; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px 10px;
+    }
+    th {
+      background: #f0f7ff;
+    }
+    .small { font-size: 13px; color: #555; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Парсер скринов NBA 2K / ESportsBattle + Калькулятор тотала</h1>
-    
-    <div class="controls">
-      <input id="file" type="file" accept="image/*" />
-      <button id="run" disabled>Распознать и рассчитать</button>
-      <div id="status" class="small">Выберите изображение</div>
-    </div>
 
-    <img id="preview" alt="preview" />
-
-    <h3>Распознанный текст</h3>
-    <div class="log" id="rawText">Текст появится после распознавания...</div>
-
-    <h3>Результаты парсинга</h3>
-    <div id="parsed"></div>
-
-    <h3>Расчет тоталов</h3>
-    <div id="calculations"></div>
+  <div class="card">
+    <h1>Парсер скринов NBA 2K / ESportsBattle</h1>
+    <input type="file" id="file" accept="image/*">
+    <button id="run" disabled>Распознать</button>
+    <div id="status" class="small">Выберите скриншот</div>
+    <img id="preview" alt="">
   </div>
 
-  <!-- Подключаем Tesseract.js -->
+  <div class="card">
+    <h3>Распознанный текст</h3>
+    <div id="rawText" class="log">Здесь появится текст...</div>
+  </div>
+
+  <div class="card">
+    <h3>Результаты парсинга</h3>
+    <div id="parsed"></div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
-
   <script>
-  const fileInput = document.getElementById('file');
-  const preview = document.getElementById('preview');
-  const runBtn = document.getElementById('run');
-  const status = document.getElementById('status');
-  const rawTextEl = document.getElementById('rawText');
-  const parsedEl = document.getElementById('parsed');
-  const calculationsEl = document.getElementById('calculations');
-  let currentImage = null;
+    const fileInput = document.getElementById('file');
+    const preview = document.getElementById('preview');
+    const runBtn = document.getElementById('run');
+    const status = document.getElementById('status');
+    const rawTextEl = document.getElementById('rawText');
+    const parsedEl = document.getElementById('parsed');
 
-  fileInput.addEventListener('change', e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    preview.src = url;
-    currentImage = url;
-    runBtn.disabled = false;
-    status.textContent = 'Готово. Нажми "Распознать и рассчитать"';
-    rawTextEl.textContent = 'Текст появится после распознавания...';
-    parsedEl.innerHTML = '';
-    calculationsEl.innerHTML = '';
-  });
+    let currentImage = null;
 
-  runBtn.addEventListener('click', async () => {
-    if (!currentImage) return;
-    runBtn.disabled = true;
-    status.textContent = 'Загрузка OCR...';
-
-    try {
-      // создаём и инициализируем движок (новый синтаксис Tesseract v4)
-      const worker = await Tesseract.createWorker('rus', 1, {
-        logger: m => {
-          if (m.status && m.progress != null)
-            status.textContent = `${m.status} ${(m.progress*100).toFixed(0)}%`;
-          else if (m.status) status.textContent = m.status;
-        }
-      });
-
-      // предварительная обработка изображения (увеличение, контраст)
-      const img = document.createElement('img');
-      img.src = currentImage;
-      await img.decode();
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      canvas.width = img.width * 2;
-      canvas.height = img.height * 2;
-      ctx.filter = 'grayscale(1) contrast(1.4) brightness(1.1)';
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      const preprocessed = canvas.toDataURL('image/png');
-      status.textContent = 'Распознаю текст...';
-      const { data: { text } } = await worker.recognize(preprocessed);
-
-      rawTextEl.textContent = text.trim() || '(ничего не распознано)';
-      console.log('OCR result:', text);
-
-      // парсим текст
-      const parsed = parseMatchText(text);
-      renderParsed(parsed);
-      calculateAndDisplayTotals(parsed);
-
-      await worker.terminate();
-      status.textContent = 'Готово';
-    } catch (err) {
-      console.error(err);
-      status.textContent = 'Ошибка: ' + (err.message || err);
-      rawTextEl.textContent = (err.message || String(err));
-    } finally {
+    // Загружаем превью
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      preview.src = url;
+      currentImage = file;
+      status.textContent = "Файл выбран. Готов к распознаванию.";
       runBtn.disabled = false;
-    }
-  });
+      rawTextEl.textContent = 'Здесь появится текст...';
+      parsedEl.innerHTML = '';
+    });
 
-  // ======== ПАРСЕР ========
-  function parseMatchText(text) {
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const result = { teams: [] };
+    // Основная функция распознавания
+    runBtn.addEventListener('click', async () => {
+      if (!currentImage) return;
+      runBtn.disabled = true;
+      status.textContent = "Инициализация OCR...";
 
-    const teamLines = lines.filter(l => /\d+\s+\d+\s+\d+/.test(l));
-    for (const l of teamLines) {
-      const nums = l.match(/\d+/g)?.map(Number) || [];
-      const name = l.replace(/\d+/g, '').trim();
-      if (nums.length >= 2) {
-        result.teams.push({
-          name,
-          perQuarter: nums.slice(0, -1),
-          total: nums.at(-1)
-        });
+      try {
+        const reader = new FileReader();
+        reader.readAsDataURL(currentImage);
+        await new Promise(r => reader.onload = r);
+
+        const imageDataUrl = reader.result;
+        status.textContent = "Распознавание (русский)...";
+
+        const result = await Tesseract.recognize(
+          imageDataUrl,
+          'rus+eng',
+          {
+            logger: m => {
+              if (m.status && m.progress != null)
+                status.textContent = `${m.status}: ${(m.progress * 100).toFixed(0)}%`;
+            }
+          }
+        );
+
+        const text = result.data.text.trim();
+        rawTextEl.textContent = text || '(Ничего не найдено)';
+        console.log("OCR result:", text);
+
+        const parsed = parseMatchText(text);
+        renderParsed(parsed);
+        status.textContent = "Готово";
+
+      } catch (err) {
+        console.error(err);
+        status.textContent = "Ошибка OCR: " + err.message;
+      } finally {
+        runBtn.disabled = false;
       }
-    }
-    return result;
-  }
+    });
 
-  // ======== ВЫВОД ========
-  function renderParsed(parsed) {
-    parsedEl.innerHTML = '';
-    if (!parsed.teams.length) {
-      parsedEl.innerHTML = '<p>Не удалось найти команды и счёт.</p>';
-      return;
-    }
-    const table = document.createElement('table');
-    table.innerHTML = '<tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr>';
-    for (const t of parsed.teams) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${t.name}</td><td>${t.perQuarter.join(' + ')}</td><td>${t.total}</td>`;
-      table.appendChild(tr);
-    }
-    parsedEl.appendChild(table);
-  }
+    // Парсер текста
+    function parseMatchText(text) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const teams = [];
 
-  // ======== РАСЧЁТ ТОТАЛОВ ========
-  function calculateAndDisplayTotals(parsed) {
-    calculationsEl.innerHTML = '';
-    if (parsed.teams.length < 2) {
-      calculationsEl.textContent = 'Недостаточно данных.';
-      return;
+      for (const l of lines) {
+        if (/\d+\s+\d+\s+\d+/.test(l)) {
+          const nums = l.match(/\d+/g)?.map(Number) || [];
+          const name = l.replace(/\d+/g, '').trim();
+          teams.push({ name, perQuarter: nums.slice(0, -1), total: nums.at(-1) });
+        }
+      }
+
+      return { teams };
     }
-    const totalScore = parsed.teams[0].total + parsed.teams[1].total;
-    const el = document.createElement('div');
-    el.className = 'stat-card';
-    el.innerHTML = `<b>Общий счёт:</b> ${totalScore}<br><b>Средний тотал на четверть:</b> ${(totalScore/3).toFixed(1)}`;
-    calculationsEl.appendChild(el);
-  }
+
+    // Отображение таблицы
+    function renderParsed(parsed) {
+      parsedEl.innerHTML = '';
+      if (!parsed.teams.length) {
+        parsedEl.innerHTML = '<p>Не удалось определить команды.</p>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      table.innerHTML = '<tr><th>Команда</th><th>По четвертям</th><th>Итого</th></tr>';
+
+      for (const team of parsed.teams) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${team.name}</td>
+          <td>${team.perQuarter.join(' + ')}</td>
+          <td>${team.total}</td>
+        `;
+        table.appendChild(tr);
+      }
+      parsedEl.appendChild(table);
+    }
   </script>
 </body>
 </html>
