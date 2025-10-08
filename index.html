@@ -1,19 +1,29 @@
+Here's an HTML file with JavaScript and CSS that allows you to upload a screenshot and extracts the team scores using basic image text recognition. Note that this uses a simple approach with the Tesseract.js library for OCR, which may need refinement for accuracy depending on the image quality.
+
+<xaiArtifact artifact_id="9b077116-27cd-4dd7-9fb8-19702d1772a0" artifact_version_id="a43f91bb-8b28-47e0-a7d9-4c9508ccdfcb" title="score_extractor.html" contentType="text/html">
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Game Score</title>
+    <title>Score Extractor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             background-color: #2f2f2f;
             color: #fff;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
             height: 100vh;
             margin: 0;
+            padding-top: 20px;
+        }
+        .upload-section {
+            margin-bottom: 20px;
+        }
+        input[type="file"] {
+            margin-top: 10px;
         }
         .score-board {
             background-color: #4a2c2a;
@@ -31,22 +41,70 @@
             font-size: 24px;
             margin-left: 10px;
         }
+        #loading {
+            display: none;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
-    <div class="score-board">
-        <div class="team">
-            <span class="team-name">Мед Антс</span>
-            <span class="score">63</span>
+    <div class="upload-section">
+        <input type="file" id="screenshotInput" accept="image/*">
+        <div id="loading">Processing...</div>
+    </div>
+    <div class="score-board" id="scoreBoard">
+        <div class="team" id="team1">
+            <span class="team-name">Team 1</span>
+            <span class="score" id="score1">0</span>
         </div>
-        <div class="team">
-            <span class="team-name">Пайретс</span>
-            <span class="score">78</span>
+        <div class="team" id="team2">
+            <span class="team-name">Team 2</span>
+            <span class="score" id="score2">0</span>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
     <script>
-        // No dynamic updates needed for static scores from the screenshot
+        const screenshotInput = document.getElementById('screenshotInput');
+        const loading = document.getElementById('loading');
+        const score1 = document.getElementById('score1');
+        const score2 = document.getElementById('score2');
+
+        screenshotInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                loading.style.display = 'block';
+                Tesseract.recognize(
+                    file,
+                    'eng+rus',
+                    { logger: m => console.log(m) }
+                ).then(({ data: { text } }) => {
+                    loading.style.display = 'none';
+                    const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+                    let team1Score = 0, team2Score = 0;
+
+                    // Simple parsing assuming scores are numbers at the end of lines
+                    lines.forEach(line => {
+                        const match = line.match(/\d+$/);
+                        if (match) {
+                            const score = parseInt(match[0], 10);
+                            if (!team1Score) team1Score = score;
+                            else if (!team2Score) team2Score = score;
+                        }
+                    });
+
+                    if (team1Score && team2Score) {
+                        score1.textContent = team1Score;
+                        score2.textContent = team2Score;
+                    } else {
+                        alert('Could not extract scores accurately. Please try a clearer image.');
+                    }
+                }).catch(err => {
+                    loading.style.display = 'none';
+                    alert('Error processing image: ' + err.message);
+                });
+            }
+        });
     </script>
 </body>
 </html>
